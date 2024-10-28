@@ -122,9 +122,9 @@ async def add_data(data, last_update_date, async_session, mx_date=None):
                 
             # Обновление полей метрик
             field = el["field"]
-            if field in field_mapping:
-                data_add[field_mapping[field]] = el["value"]
-                
+            if field in field_mapping:                
+                data_add[field_mapping[field]] = None if int(el["value"]) == 0 else el["value"]
+
 
     # Создание списка задач для параллельной обработки каждого запроса
     tasks = [process_query(query) for query in data['text_indicator_to_statistics']]

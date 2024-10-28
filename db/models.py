@@ -28,17 +28,30 @@ class Metrics(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     url_id = Column(Integer, ForeignKey('url.id'), nullable=False, unique=True)
     date = Column(DateTime, nullable=False, default=datetime.now)
-    position = Column(Float, nullable=False)
-    ctr = Column(Float, nullable=False)
-    impression = Column(Float, nullable=False)
-    demand = Column(Float, nullable=False)
-    clicks = Column(Float, nullable=False)
+    position = Column(Float, nullable=True)
+    ctr = Column(Float, nullable=True)
+    impression = Column(Float, nullable=True)
+    demand = Column(Float, nullable=True)
+    clicks = Column(Float, nullable=True)
 
     url_relation = relationship("Url", back_populates="metrics")
     # Обеспечиваем обратную совместимость с полем url
     @property
     def url(self):
         return self.url_relation.url  # Возвращаем поле url из таблицы url
+
+class MetricsView(Base):
+    __tablename__ = "metrics_view"
+    #__table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    url_id = Column(Integer, ForeignKey('url.id'), nullable=False, unique=True)
+    date = Column(DateTime, nullable=False, default=datetime.now)
+    position = Column(Float, nullable=True)
+    ctr = Column(Float, nullable=True)
+    impression = Column(Float, nullable=True)
+    demand = Column(Float, nullable=True)
+    clicks = Column(Float, nullable=True)
 
 class Query(Base):
     __tablename__ = "query"
@@ -54,17 +67,30 @@ class MetricsQuery(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     query_id = Column(Integer, ForeignKey('query.id'), nullable=False, unique=True)
     date = Column(DateTime, nullable=False, default=datetime.now)
-    position = Column(Float, nullable=False)
-    ctr = Column(Float, nullable=False)
-    impression = Column(Float, nullable=False)
-    demand = Column(Float, nullable=False)
-    clicks = Column(Float, nullable=False)
+    position = Column(Float, nullable=True)
+    ctr = Column(Float, nullable=True)
+    impression = Column(Float, nullable=True)
+    demand = Column(Float, nullable=True)
+    clicks = Column(Float, nullable=True)
 
     query_relation = relationship("Query", back_populates="metrics_queries")
     # Обеспечиваем обратную совместимость с полем query
     @property
     def query(self):
         return self.query_relation.query  # Возвращаем поле query из таблицы Query
+
+class MetricsQueryView(Base):
+    __tablename__ = "metrics_query_view"
+    #__table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    query_id = Column(Integer, ForeignKey('query.id'), nullable=False, unique=True)
+    date = Column(DateTime, nullable=False, default=datetime.now)
+    position = Column(Float, nullable=True)
+    ctr = Column(Float, nullable=True)
+    impression = Column(Float, nullable=True)
+    demand = Column(Float, nullable=True)
+    clicks = Column(Float, nullable=True)
 
 class QueryIndicator(Base):
     __tablename__ = "query_indicator"
