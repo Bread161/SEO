@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from api.config.utils import load_live_search
 from api.auth.auth_config import RoleChecker, PermissionRoleChecker
 from api.auth.models import User
@@ -27,13 +27,23 @@ router = APIRouter()
 async def load_queries_script(
         request: Request,
         #required: bool = Depends(RoleChecker(required_permissions={"Administrator", "Superuser"})),
-        required_permission: bool = Depends(PermissionRoleChecker({"access_queries_full", "access_queries_update"}))
+        # required_permission: bool = Depends(PermissionRoleChecker({"access_queries_full", "access_queries_update"}))
 ):
     request_session = request.session
     res = await get_all_data_queries(request_session)
     if res["status"] == 400:
         raise HTTPException(status_code=400, detail="Нет новых обновлений")
     return res
+
+
+@router.get('/get-regions/')
+async def get_regions(
+    request: Request,
+    session: AsyncSession = Depends(get_db_general)
+):
+    regions = (await session.execute(select(YandexLr))).scalars().all()
+    return {region.Geoid: region.Geo for region in regions}
+
 
 @router.get('/load-queries-by-config/{config_id}')
 async def load_queries_by_config(
@@ -142,6 +152,51 @@ async def load_live_search_list(
     status = await load_live_search(user, list_lr_id, session)
     if status == 0:
         raise HTTPException(status_code=400, detail="Запросов доступно меньше, чем необходимо")
+
+    return {
+        "status": 200,
+    }
+
+@router.post('/load-live-search/test')
+async def load_live_search_list_test(
+    request: Request,
+    data: dict,
+    session: AsyncSession = Depends(get_db_general),
+    user: User = Depends(current_user),
+    #required: bool = Depends(RoleChecker(required_permissions={"Administrator", "Superuser", "Search"}))
+):
+    list_lr_id = (await session.execute(
+        select(ListLrSearchSystem.id)
+        .where(and_(
+            ListLrSearchSystem.list_id == int(data['list_id']),
+            ListLrSearchSystem.lr == int(data['region_id'])
+        ))
+    )).scalars().first()
+    status = (
+        await load_live_search(user, list_lr_id, session) if list_lr_id else 0
+    )
+    if status == 0:
+        raise HTTPException(status_code=400, detail="Запросов доступно меньше, чем необходимо")
+
+    return {
+        "status": 200,
+    }
+
+
+@router.post("/update_all_regions_by_list_id/{list_id}")
+async def update_all_regions_by_list_id(
+        list_id: int,
+        session: AsyncSession = Depends(get_db_general),
+        user: User = Depends(current_user)):
+    regions = await session.execute(
+        select(ListLrSearchSystem)
+        .where(ListLrSearchSystem.list_id == list_id)
+    )
+    regions = regions.scalars().all()
+    for region in regions:
+        status = await load_live_search(user, region.id, session)
+        if status == 0:
+            raise HTTPException(status_code=400, detail="Запросов доступно меньше, чем необходимо")
 
     return {
         "status": 200,

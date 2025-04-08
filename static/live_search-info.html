@@ -264,6 +264,47 @@
         document.getElementById('start_date').value = getDate(14);
     }
 
+    function addQueryParams(url, params) {
+        let p = "?"
+          for (const paramName in params) {
+              const val = params[paramName]
+              if (val !== null &&
+                  val !== undefined &&
+                  val !== "" &&
+                  val !== Infinity
+              ) {
+                  p  += `${paramName}=${val.toString()}&`
+              }
+          }
+        return url + p
+    }
+
+    function SetDataTable2() {
+        const baseURL = "{{ url_for('get_live_search_list_table', list_id=list_id) }}"
+        const params = {
+            length: 50, // количество отображаемых элементов
+            start: 0, // номер страницы
+            start_date: new Date(document.getElementById('start_date').value).getTime() / 1000, // Дата начала поиска
+            end_date: new Date(document.getElementById('end_date').value).getTime() / 1000, // Дата окончания поиска
+            amount: calculateDays(),
+            search_text: document.getElementById("search_field").value,
+            sort_result: document.getElementById("input_sort").checked,
+            sort_desc: document.getElementById("input_desc").checked,
+            button_date: global_date,
+            button_state: state,
+            metric_type: metric_type,
+            state_type: state_type,
+            list_id: '{{ list_id }}',
+            search_system: '{{ search_system }}',
+            lr_list_id: '{{ lr_id }}'
+        }
+        const urlWithParams = addQueryParams(baseURL, params)
+        fetch(urlWithParams, {
+            method: "GET",
+        }).then(response => response.json()).then(data => {
+            console.log(data)
+        })
+    }
 
     function SetDataTable() {
 
@@ -1248,6 +1289,7 @@
 
     $(document).ready(SetDatePage())
     $(document).ready(SetDataTable())
+    $(document).ready(SetDataTable2())
 </script>
 <div class="loader" style="display: none;"></div>
 <script>

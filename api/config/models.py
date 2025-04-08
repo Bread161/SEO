@@ -201,7 +201,7 @@ class QueryLiveSearchYandex(Base):
     __tablename__ = "query_live_search_yandex"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    query_id = Column(Integer, ForeignKey("live_search_list_query.id"), nullable=False)
+    query_id = Column(Integer, ForeignKey("live_search_list_query.id", ondelete="CASCADE"), nullable=False)
     url = Column(String, nullable=False)
     position = Column(Integer, nullable=False)
     date = Column(DateTime, nullable=False)
@@ -218,7 +218,7 @@ class QueryLiveSearchGoogle(Base):
     __tablename__ = "query_live_search_google"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    query_id = Column(Integer, ForeignKey("live_search_list_query.id"), nullable=False)
+    query_id = Column(Integer, ForeignKey("live_search_list_query.id", ondelete="CASCADE"), nullable=False)
     url = Column(String, nullable=False)
     position = Column(Integer, nullable=False)
     date = Column(DateTime, nullable=False)

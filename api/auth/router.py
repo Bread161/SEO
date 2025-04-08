@@ -25,21 +25,18 @@ async def show_main_page(
         user: User = Depends(current_user),
         session: AsyncSession = Depends(get_db_general)):
     if not user:
-        return templates.TemplateResponse("main_page.html",
+        return templates.TemplateResponse("/templates/users/signup.html",  # main_page.html
                                           {"request": request,
-                                           "user": user,
-                                           "config_names": [],
-                                           "group_names": []})
+                                           "user": user})
+
     group_name = request.session["group"].get("name", "")
-    config_names = [elem[0] for elem in (await get_config_names(session, user, group_name))]
+    config_names = [{'name': elem[0], 'id': elem[1]} for elem in (await get_config_names(session, user, group_name))]
 
-    group_names = await get_group_names(session, user)
-
-    return templates.TemplateResponse("main_page.html",
+    return templates.TemplateResponse("/templates/base/mainPage.html",  # main_page.html
                                       {"request": request,
                                        "user": user,
                                        "config_names": config_names,
-                                       "group_names": group_names})
+                                       "group_names": group_name})
 
 
 @router.post("/change_user_role")

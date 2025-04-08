@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 from enum import Enum
 from typing import Optional
@@ -49,3 +50,21 @@ class AutoUpdatesScheduleCreate(AutoUpdatesScheduleBase):
             not self._are_days_in_range(self.days, 31)):
             raise ValueError("month days out of range") 
         return self
+
+
+class DeleteLiveSearchListsByIds(BaseModel):
+    ids: list[int]
+
+
+class CreateNewList(BaseModel):
+    name: str
+
+
+class PositionDayStat(BaseModel):
+    link: str
+    count: int | float | None
+
+
+class GetPositionTableData(BaseModel):
+    query: str
+    dates: list[dict[datetime, PositionDayStat]]

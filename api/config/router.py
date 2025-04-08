@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth.auth_config import current_user
 from api.auth.models import GroupUserAssociation, User
 from api.config.models import Config, GroupConfigAssociation, List, ListURI, Role, Group, UserQueryCount
-from api.config.utils import get_config_info
+from api.config.utils import (
+    get_config_info,
+    get_group_names,
+    get_config_names,
+    add_group_from_popup
+)
 from config import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
 from db.session import get_db_general
 from fastapi.templating import Jinja2Templates
@@ -33,16 +38,36 @@ ROLES_PERMISSIONS = {
 }
 
 
+@router.get('/get-grouped-configs')
+async def get_grouped_configs(
+    request: Request,
+    session: AsyncSession = Depends(get_db_general),
+    user: User = Depends(current_user)
+):
+    group_names = await get_group_names(session, user)
+    grouped_config_names = {}
+    for group in group_names:
+        grouped_config_names[group] = [
+            tuple(elem) for elem in (
+                await get_config_names(session, user, group)
+                )
+            ]
+    return grouped_config_names
+
+
 @router.post('/add-config')
 async def add_config(request: Request,
                      formData: dict,
                      session: AsyncSession = Depends(get_db_general),
                      user: User = Depends(current_user)):
-    name, database_name, access_token, user_id, host_id = (formData["name"],
-                                                           formData["database_name"],
-                                                           formData["access_token"],
-                                                           formData["user_id"],
-                                                           formData["host_id"])
+    name, database_name, access_token, user_id, host_id, new_group_name = (
+        formData["name"],
+        formData["database_name"],
+        formData["access_token"],
+        formData["user_id"],
+        formData["host_id"],
+        formData["new_group_name"]
+    )
 
     config = Config(id_author=user.id, name=name,
                     database_name=database_name,
@@ -69,6 +94,12 @@ async def add_config(request: Request,
     alembic_cfg.set_main_option("sqlalchemy.url",
                                 f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{database_name}")
     command.upgrade(alembic_cfg, "head")
+    await add_group_from_popup(
+        group_name=new_group_name,
+        config_id=int(config.id),
+        session=session,
+        user=user
+    )
 
     return {"status": 200}
 
@@ -110,8 +141,6 @@ async def set_group(
     )).scalars().first()
 
     config_record = (await session.execute(select(Config).where(Config.id == config_association))).scalars().first()
-
-    print(config_record)
     
     # Установка значений конфигурации
     if config_record:
@@ -494,7 +523,6 @@ async def add_group_for_user(
     }
 
 
-
 @router.post("/group")
 async def add_group(
         request: Request,
@@ -515,7 +543,7 @@ async def add_group(
         }
 
     # Создание новой группы
-    new_group = Group(name=group_name, id_author = user.id)
+    new_group = Group(name=group_name, id_author=user.id)
 
     # Добавление конфигураций
     configs_objects = []

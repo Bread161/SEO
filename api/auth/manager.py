@@ -132,8 +132,8 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
                 return existing_user
             else:
                 raise exceptions.UserAlreadyExists()
-        else:
-            raise exceptions.UserAlreadyExists()
+        # else:
+        #     raise exceptions.UserAlreadyExists()
         safe = False
         user_dict = (
             user_create.create_update_dict()

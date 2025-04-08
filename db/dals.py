@@ -87,6 +87,9 @@ class UrlDAL:
         if metric_type == "C":
             pointer = MetricsView.ctr
             result_pointer = func.avg(MetricsView.ctr)
+        if metric_type == "W":
+            pointer = Url.url
+            result_pointer = pointer
         
         sub_query = select(Url)
 
@@ -128,7 +131,7 @@ class UrlDAL:
                 ).having(and_(MetricsView.date <= date_end, MetricsView.date >= date_start)).join(Url, MetricsView.url_id == Url.id)
             else:
                 sub = sub_query_result.where(
-                    and_(MetricsView.date >= date_start, MetricsView.date <= date_end)).group_by(MetricsView.url_id).order_by(
+                    and_(MetricsView.date >= date_start, MetricsView.date <= date_end)).group_by(MetricsView.url_id, Url.url).order_by(
                     desc(result_pointer)).offset(page).limit(per_page).subquery()
 
                 query = select(MetricsView.date, MetricsView.position, MetricsView.clicks, MetricsView.impression,
@@ -670,6 +673,9 @@ class QueryDAL:
         if metric_type == "C":
             pointer = MetricsQueryView.ctr
             result_pointer = func.avg(MetricsQueryView.ctr)
+        if metric_type == "W":
+            pointer = Query.query
+            result_pointer = pointer
         if not state:
             sub = select(Query.id, Query.query).offset(page).limit(
                 per_page).subquery()
@@ -747,7 +753,7 @@ class QueryDAL:
                     MetricsQueryView.clicks,
                     MetricsQueryView.impression,
                     MetricsQueryView.ctr,
-                ).having(and_(MetricsQueryView.date <= date_end, MetricsQueryView.date >= date_start))
+                ).having(and_(MetricsQueryView.date < date_end, MetricsQueryView.date > date_start))
 
         res = await self.db_session.execute(query)
         product_row = res.fetchall()

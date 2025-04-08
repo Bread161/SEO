@@ -1,11 +1,13 @@
-from sqlalchemy import case, exists, or_, select, and_, tuple_
+from sqlalchemy import case, exists, or_, select, and_, tuple_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.session import async_session_general
 from sqlalchemy.orm import aliased
+from sqlalchemy.orm.attributes import InstrumentedAttribute
+from sqlalchemy.sql.elements import UnaryExpression
 
 from api.auth.models import User, GroupUserAssociation
 from api.config.models import AutoUpdatesMode, Config, Group, GroupConfigAssociation, Role, UserQueryCount, \
-     ListLrSearchSystem, List, LiveSearchList, LiveSearchAutoUpdateSchedule, YandexLr
+     ListLrSearchSystem, LiveSearchListQuery, List, LiveSearchList, LiveSearchAutoUpdateSchedule, YandexLr
 from db.session import async_session_general
 from services.load_live_search import main as live_search_main
 
@@ -47,22 +49,12 @@ async def load_live_search(user, list_lr_id: int, session: AsyncSession):
     return await live_search_main(list_lr_id, list_id, main_domain, lr, search_system, user, session)
 
 
-async def load_live_search(user, list_lr_id: int, session: AsyncSession):
-    list_lr = (await session.execute(select(ListLrSearchSystem).where(ListLrSearchSystem.id == list_lr_id))).scalars().first()
-
-    list_id, lr, search_system = list_lr.list_id, list_lr.lr, list_lr.search_system
-
-    main_domain = (await session.execute(select(LiveSearchList.main_domain).where(LiveSearchList.id == list_id))).scalars().first()
-
-    return await live_search_main(list_lr_id, list_id, main_domain, lr, search_system, user, session)
-
-
 async def get_config_names(session: AsyncSession, user: User, group_name):
     query = select(Group.id).where(Group.name == group_name)
     group_id = (await session.execute(query)).fetchone()
     if group_id:
         group_id = group_id[0]
-    query = (select(Config.name)
+    query = (select(Config.name, Config.id)
              .join(GroupConfigAssociation, GroupConfigAssociation.config_id == Config.id)
              .where(GroupConfigAssociation.group_id == group_id))
     res = (await session.execute(query)).all()
@@ -116,12 +108,74 @@ async def get_live_search_lists_names(
     session: AsyncSession,
     user: User,
 ):
-    stmt = select(LiveSearchList).where(
-        LiveSearchList.author == user.id
+    stmt = (
+        select(LiveSearchList, func.count(LiveSearchListQuery.id).label("query_count"))
+        .outerjoin(LiveSearchListQuery, LiveSearchList.queries)
+        .where(LiveSearchList.author == user.id)
+        .group_by(LiveSearchList.id)
     )
-
     result = await session.execute(stmt)
-    return result.scalars().all()
+    result = result.all()
+    lists = [None] * len(result)
+    for i, (list_, query_count) in enumerate(result):
+        list_.query_count = query_count
+        lists[i] = list_
+    return lists
+
+
+async def get_live_search_lists_names_test(
+    session: AsyncSession,
+    user: User,
+):
+    stmt = (
+        select(LiveSearchList, func.count(LiveSearchListQuery.id).label("query_count"))
+        .outerjoin(LiveSearchListQuery, LiveSearchList.queries)
+        .where(LiveSearchList.author == user.id)
+        .group_by(LiveSearchList.id)
+    )
+    result = await session.execute(stmt)
+    result = result.all()
+
+    # Обработка результатов
+    lists = [None] * len(result)
+    for i, (list_, query_count) in enumerate(result):
+        list_.query_count = query_count  # Добавление количества запросов
+        lists[i] = list_
+    return lists
+
+
+async def get_live_search_lists_names_with_pagination(
+        session: AsyncSession,
+        page: int,
+        per_page: int,
+        user: User,
+        order_by = None,
+):
+    stmt = (
+        select(
+            LiveSearchList,
+            func.count(LiveSearchListQuery.id).label("query_count"),
+            func.count(LiveSearchList.id).over(partition_by=LiveSearchList.author).label("total_list_count")
+        )
+        .outerjoin(LiveSearchListQuery, LiveSearchList.queries)
+        .where(LiveSearchList.author == user.id)
+        .limit(per_page)
+        .offset(per_page * (page - 1))
+        .order_by(order_by if order_by is not None else LiveSearchList.id.asc())
+        .group_by(LiveSearchList.id)
+    )
+    print(stmt, stmt.params())
+    result = await session.execute(stmt)
+    result  = result.all()
+
+    total_lists_count = result[0].total_list_count
+    lists = [None] * len(result)
+    for i, (list_, query_count, _) in enumerate(result):
+        list_.query_count = query_count
+        lists[i] = list_
+    # print(f"lists: {lists}, total_lists_count: {total_lists_count}")
+    return lists, total_lists_count
+    # return lists
 
 
 async def get_all_user(
@@ -185,3 +239,48 @@ async def get_all_configs(
     configs = (await session.execute(select(Config))).scalars().all()
 
     return configs
+
+
+async def add_group_from_popup(
+    group_name: str,
+    config_id: int,
+    session: AsyncSession,
+    user,
+):
+
+    res = (
+        await session.execute(
+            select(Group)
+            .where(Group.name == group_name)
+        )
+    ).scalar()
+
+    group = Group(name=group_name, id_author=user.id) if not res else res
+
+    # Добавление конфигураций
+    configs_objects = []
+    result = await session.execute(select(Config).filter_by(id=config_id))
+    config = result.scalars().first()
+    configs_objects.append(config)
+    group.configs += configs_objects
+
+    is_association_exists = (
+        await session.execute(
+            select(GroupUserAssociation)
+            .where(
+                GroupUserAssociation.user_id == user.id,
+                GroupUserAssociation.group_id == group.id,
+            ))
+        ).scalar()
+    session.add(group)
+    await session.commit()
+
+    if not is_association_exists:
+        session.add(
+            GroupUserAssociation(
+                user_id=user.id,
+                group_id=group.id
+            )
+        )
+
+    await session.commit()

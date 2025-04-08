@@ -25,9 +25,11 @@ async def get_urls_with_pagination(
         database = QueryLiveSearchGoogle
     else:
         print("Поисковая система не указана")
-    
+
     if metric_type == "P":
         pointer = database.position
+    if metric_type == "W":
+        pointer = ...
 
     if not state:
         sub = select(LiveSearchListQuery).where(LiveSearchListQuery.list_id == list_id).offset(page).limit(per_page).subquery()
@@ -191,6 +193,7 @@ async def get_urls_with_pagination_and_like(
     elif search_system == "Google":
         database = QueryLiveSearchGoogle
     else:
+        return
         print("Поисковая система не указана")
     
     if metric_type == "P":

@@ -1,3 +1,5 @@
+import http
+import math
 from io import BytesIO
 from typing import Optional
 
@@ -6,12 +8,13 @@ from fastapi import UploadFile, Request
 from fastapi import status
 from sqlalchemy.exc import IntegrityError
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi import Request
+from fastapi import Request, Query as FQuery
 from sqlalchemy import and_, delete, select, or_, update, insert
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import func
 
 from api.auth.auth_config import current_user, RoleChecker, PermissionRoleChecker
 from api.auth.exceptions import InvalidEmail
@@ -21,14 +24,16 @@ from api.auth.schemas import UserCreate
 from api.config.models import Config, Group, List, ListLrSearchSystem, ListURI, LiveSearchList, LiveSearchListQuery \
     , UserQueryCount, YandexLr, Role, AutoUpdatesMode
 from api.config.utils import get_all_configs, get_all_groups, get_all_groups_for_user, get_all_roles, get_all_user, \
-    get_config_names, get_group_names, get_groups_names_dict, get_lists_names, get_live_search_lists_names, update_list
-from api.schemas import AutoUpdatesScheduleRead, AutoUpdatesScheduleCreate
+    get_config_names, get_group_names, get_groups_names_dict, get_lists_names, get_live_search_lists_names, \
+    get_live_search_lists_names_with_pagination, update_list, get_live_search_lists_names_test
+from api.schemas import AutoUpdatesScheduleRead, AutoUpdatesScheduleCreate, DeleteLiveSearchListsByIds
 from api.config.models import LiveSearchAutoUpdateSchedule
 from api.query_api.router import router as query_router
 from api.url_api.router import router as url_router
 from api.history_api.router import router as history_router
 from api.merge_api.router import router as merge_router
 from api.live_search_api.router import router as live_search_router
+from db.models import Query
 from db.session import get_db_general
 from utils import CommaNewLineSeparatedValues, import_users_from_excel
 import config
@@ -68,6 +73,22 @@ def pad_list_with_zeros(lst, amount):
 @admin_router.get("/")
 async def login_page(request: Request, user: User = Depends(current_user)):
     return templates.TemplateResponse("login.html", {"request": request, "user": user})
+
+
+@admin_router.get("/test")
+async def login_page_test(request: Request, user: User = Depends(current_user)):
+    return templates.TemplateResponse(
+        "templates/users/signup.html",
+        {"request": request, "user": user}
+    )
+
+
+@admin_router.get("/register/test")
+async def register_test(request: Request, user: User = Depends(current_user)):
+    return templates.TemplateResponse(
+        "templates/users/signup.html",
+        {"request": request, "user": user}
+    )
 
 
 @admin_router.get("/register")
@@ -113,7 +134,8 @@ async def show_superuser(
                                        "user": user,
                                        "config_names": config_names,
                                        "group_names": group_names,
-                                       "all_configs": all_configs,})
+                                       "all_configs": all_configs,
+                                       })
 
 
 @admin_router.get("/list/{username}")
@@ -366,6 +388,45 @@ async def add_uri(
     }
 
 
+@admin_router.get("/positions/{username}")
+async def show_positions(
+        request: Request,
+        user=Depends(current_user),
+        session: AsyncSession = Depends(get_db_general),
+        per_page: int = FQuery(5),
+        page: int = FQuery(1),
+        #required: bool = Depends(RoleChecker(required_permissions={"User", "Administrator", "Superuser", "Search"}))
+):
+    """TODO: Delete it later"""
+    config_id = request.session["config"]["config_id"]
+    group_id = request.session["group"]["group_id"]
+
+    group_name = request.session["group"].get("name", "")
+    print((await get_config_names(session, user, group_name)))
+    config_names = [elem[0] for elem in (await get_config_names(session, user, group_name))]
+    group_names = await get_group_names(session, user)
+    list_names, total_count = await get_live_search_lists_names_with_pagination(session, page, per_page, user)
+
+    user_queries = (await session.execute(
+        select(UserQueryCount)
+        .where(UserQueryCount.user_id == user.id)
+    )).scalars().first()
+    print(list_names, total_count)
+
+    return templates.TemplateResponse("positions.html",
+                                      {"request": request,
+                                       "user": user,
+                                       "config_names": config_names,
+                                       "group_names": group_names,
+                                       "list_names": list_names,
+                                       "user_queries": user_queries,
+                                       "page": page,
+                                       "per_page": per_page,
+                                       "total_pages": math.ceil(total_count / per_page),
+                                       "title": "Съем позиций (Live/XML)"
+                                       })
+
+
 @admin_router.get("/live_search/{username}")
 async def show_live_search(
     request: Request,
@@ -382,6 +443,29 @@ async def show_live_search(
     list_names = await get_live_search_lists_names(session, user)
 
     return templates.TemplateResponse("live_search.html",
+                                      {"request": request,
+                                       "user": user,
+                                       "config_names": config_names,
+                                       "group_names": group_names,  
+                                       "list_names": list_names,
+                                       })
+
+@admin_router.get("/live_search/{username}/test")
+async def show_live_search_test(
+    request: Request,
+    user=Depends(current_user),
+    session: AsyncSession = Depends(get_db_general),
+    # required: bool = Depends(RoleChecker(required_permissions={"User", "Administrator", "Superuser", "Search"}))
+):
+    config_id = request.session["config"]["config_id"]
+    group_id = request.session["group"]["group_id"]
+
+    group_name = request.session["group"].get("name", "")
+    config_names = [elem[0] for elem in (await get_config_names(session, user, group_name))]
+    group_names = await get_group_names(session, user)
+    list_names = await get_live_search_lists_names_test(session, user)
+
+    return templates.TemplateResponse("/templates/live_search/positions.html",
                                       {"request": request,
                                        "user": user,
                                        "config_names": config_names,
@@ -438,6 +522,214 @@ async def add_live_search_list(
         "message": f"List '{list_name}' created successfully",
         "list_id": new_list.id
     }
+
+
+@admin_router.post("/live_search/test")
+async def add_live_search_list_test(
+    request: Request,
+    data: dict,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_db_general),
+    #  required: bool = Depends(RoleChecker(required_permissions={"Administrator", "Superuser", "Search", "User"})),
+    #  required: bool = Depends(
+    #     PermissionRoleChecker({"access_list_panel_create"})
+    #     ),
+):
+
+    main_domain, list_name, query_list, regions = data.values()
+
+    new_list = LiveSearchList(
+        name=list_name,
+        author=user.id,
+        main_domain=main_domain,
+    )
+
+    try:
+        session.add(new_list)
+        await session.flush()
+
+        new_queries = [
+            LiveSearchListQuery(query=query.strip(), list_id=new_list.id)
+            for query in query_list
+        ]
+
+        session.add_all(new_queries)
+
+        regions_query = []
+        for search_system, regions_id in regions.items():
+            for region_id in regions_id:
+                if not region_id.isnumeric():
+                    raise Exception('Регион не является числом')
+                region = int(region_id)
+                regions_query.append(ListLrSearchSystem(
+                    list_id=new_list.id,
+                    lr=region,
+                    search_system=search_system,
+                ))
+        session.add_all(regions_query)
+        await session.commit()
+
+    except IntegrityError:
+        await session.rollback()
+        return JSONResponse(
+            status_code=400,
+            content={"error": "An error occurred while adding the list. Possibly due to database constraints."}
+        )
+    except Exception as e:
+        await session.rollback()
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"An unexpected error occurred: {str(e)}"}
+        )
+
+    return {
+        "status": "success",
+        "message": f"List '{list_name}' created successfully",
+        "list_id": new_list.id
+    }
+
+
+@admin_router.post('/live_search/{list_id}/edit')
+async def submit_edit_live_search(
+    request: Request,
+    list_id: int,
+    data: dict,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_db_general),
+):
+    queries: dict[str, dict] = data.pop('queries')
+    regions: dict[str, list] = data.pop('regions')
+
+    live_data = (await session.execute(
+        select(LiveSearchList)
+        .where(LiveSearchList.id == list_id)
+    )).scalar_one_or_none()
+
+    if not live_data:
+        raise HTTPException(status_code=404, detail='Объект не найден')
+    if live_data.author != user.id:
+        raise HTTPException(status_code=403, detail='Вы не являетесь автором')
+
+    for key, value in data.items():
+        setattr(live_data, key, value)
+
+    old_queries = (await session.execute(
+        select(LiveSearchListQuery.id, LiveSearchListQuery.query)
+        .where(LiveSearchListQuery.list_id == list_id)
+    )).mappings().all()
+    for query_row_item in old_queries:
+        if dict(query_row_item) not in queries['old']:
+            await session.execute(
+                delete(LiveSearchListQuery)
+                .where(
+                    LiveSearchListQuery.id == query_row_item['id'],
+                    LiveSearchListQuery.list_id == list_id,
+                )
+            )
+
+    new_queries = [LiveSearchListQuery(
+        query=query_name, list_id=list_id
+    ) for query_name in queries['new']]
+    session.add_all(new_queries)
+
+    existing_regions = (await session.execute(
+        select(
+            ListLrSearchSystem.lr,
+            ListLrSearchSystem.search_system,
+        )
+        .where(ListLrSearchSystem.list_id == list_id)
+    )).mappings().all()
+    for region in existing_regions:
+        validate_lr(region)
+        if dict(region) not in regions['old']:
+            await session.execute(
+                delete(ListLrSearchSystem)
+                .where(
+                    ListLrSearchSystem.list_id == list_id,
+                    ListLrSearchSystem.lr == region['lr'],
+                    ListLrSearchSystem.search_system == region['search_system'],
+                )
+            )
+    new_regions = []
+    for region in regions['new']:
+        validate_lr(region)
+        new_regions.append(ListLrSearchSystem(
+            list_id=list_id,
+            **region
+        ))
+    session.add_all(new_regions)
+    await session.commit()
+
+    return JSONResponse({
+        'data': data
+    })
+
+
+def validate_lr(region):
+    if not isinstance(region['lr'], int):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Каждый регион должен быть"
+                "строкой состоящей из чисел"
+            )
+        )
+
+
+async def create_live_search_list(
+    list_name: str,
+    main_domain: str,
+    query_list: list[str],
+    session: AsyncSession,
+    user: User,
+):
+    new_list = LiveSearchList(
+        name=list_name,
+        author=user.id,
+        main_domain=main_domain,
+    )
+
+    session.add(new_list)
+    await session.flush()
+
+    new_queries = [
+        LiveSearchListQuery(query=query.strip(), list_id=new_list.id)
+        for query in query_list
+    ]
+
+    session.add_all(new_queries)
+    await session.commit()
+
+@admin_router.delete("/live_search_by_id/{list_id}")
+async def delete_live_search_list_by_id(
+    request: Request,
+    list_id: int,
+    user=Depends(current_user),
+    session: AsyncSession = Depends(get_db_general),
+):
+    result = await session.execute(select(LiveSearchList).where(LiveSearchList.id == list_id))
+    list_to_delete = result.scalars().first()
+
+    if list_to_delete is None:
+        return {
+            "status": 404,
+            "error": f"List with id({list_id}) not found",
+        }
+    # Удаляем объект списка
+    await session.delete(list_to_delete)
+    await session.commit()  # Сохраняем изменения
+
+    return {
+        "status": http.HTTPStatus.NO_CONTENT,
+    }
+
+
+@admin_router.delete("/live_search_lists", status_code=http.HTTPStatus.NO_CONTENT)
+async def delete_lists_by_ids(list_ids: DeleteLiveSearchListsByIds, session = Depends(get_db_general), user=Depends(current_user)):
+    lists = await session.execute(select(LiveSearchList).where(LiveSearchList.id.in_(list_ids.ids)))
+    for list_ in lists.scalars().all():
+        await session.delete(list_)
+    await session.commit()  # Сохраняем изменения
 
 
 @admin_router.delete("/live_search")
@@ -693,6 +985,25 @@ async def get_regions(
     region_dict = {region.Geo: region.Geoid for region in regions}
     return region_dict
 
+
+@admin_router.get("/list_menu/search_regions", status_code=http.HTTPStatus.OK)
+async def search_regions(
+        request: Request,
+        user=Depends(current_user),
+        search: str = FQuery(None, alias="s"),
+        session: AsyncSession = Depends(get_db_general),
+        #required: bool = Depends(RoleChecker(required_permissions={"User", "Administrator", "Superuser", "Search"}))
+):
+    if not search or len(search) < 2:
+        return {}
+
+    looking_for = f"%{search.lower()}%"
+    regions = (await session.execute(
+        select(YandexLr).
+            where(YandexLr.Geo.ilike(looking_for))
+    )).scalars().all()
+    region_dict = {region.Geo: region.Geoid for region in regions}
+    return region_dict
 
 @admin_router.get("/user_menu")
 async def show_user_menu(

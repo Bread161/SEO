@@ -4,14 +4,14 @@ from typing import Callable
 from psycopg2 import IntegrityError
 from sqlalchemy import func, select
 
-from const import date_format, date_format_2
+from const import date_format, date_format_2, datetime_format
 from db.models import LastUpdateDate
 
 
 async def add_last_load_date(async_session: Callable, metrics_type: str) -> None:
     async with async_session() as session:
 
-        current_date = datetime.strptime(datetime.now().strftime(date_format), date_format)
+        current_date = datetime.strptime(datetime.now().strftime(datetime_format), datetime_format)
         last_update_date = LastUpdateDate(date=current_date, metrics_type=metrics_type)
                 
         result = await session.execute(
